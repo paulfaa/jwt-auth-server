@@ -4,6 +4,11 @@ const cors = require('cors');
 const bodyParser = require('body-parser');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
+const z = require('zod');
+const { playlistSchema, parsedImageSchema } = require('./schema');
+const { query } = require('./query');
+const { OpenAI } = require('openai');
+const { zodTextFormat } = require('openai/helpers/zod');
 
 require('dotenv').config();
 
@@ -20,20 +25,22 @@ app.use(cors({
   credentials: true
 }));
 app.use(bodyParser.json());
+app.use(express.json());
 app.use(cookieParser());
 
 const upload = multer({ storage: multer.memoryStorage() });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 app.post('/login', (req, res) => {
   const { password } = req.body;
   let role = null;
-  
+
   if (password === ADMIN_PASSWORD) {
     role = 'admin';
   } else if (password === USER_PASSWORD) {
     role = 'user';
   }
-  
+
   if (role) {
     const token = jwt.sign({ role: role }, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
     res.cookie('token', token, {
@@ -51,8 +58,12 @@ app.post('/login', (req, res) => {
 });
 
 app.get('/check', authenticateToken, (req, res) => {
-  res.status(200).json({ authenticated: true });
-  console.log('User is authenticated');
+  console.log('/check - user is authenticated');
+
+  res.status(200).json({
+    authenticated: true,
+    role: req.user.role,
+  });
 });
 
 function authenticateToken(req, res, next) {
@@ -74,11 +85,76 @@ function authenticateToken(req, res, next) {
 }
 
 app.post('/upload', authenticateToken, upload.single('image'), async (req, res) => {
-  const imageBuffer = req.file.buffer;
+  try {
+    const imageBuffer = req.file.buffer;
+    const base64Image = imageBuffer.toString('base64');
+    const mimeType = req.file.mimetype;
+    const dataUrl = `data:${mimeType};base64,${base64Image}`;
 
-  const result = { text: 'call API here' };
+    const response = await openai.responses.parse({
+      model: "gpt-4o-mini",
+      input: [
+        {
+          role: "system",
+          content: query
+        },
+        {
+          role: "user",
+          content: [
+            {
+              type: "input_image",
+              image_url: dataUrl,
+            },
+          ],
+        },
+      ],
+      text: { format: zodTextFormat(parsedImageSchema, "result") },
+    });
+    const result = response.output_parsed;
+    console.log('Parsed result:', result);
+    res.status(200).json(result);
+  }
+  catch (error) {
+    console.error('Error processing image:', error);
+    res.status(500).json({ error: 'Failed to process image' });
+  }
+});
 
-  res.status(200).json({ result: result });
+app.post('/save', authenticateToken, async (req, res) => {
+  console.log('/save endpoint received payload:', req.body);
+  const parseResult = playlistSchema.safeParse(req.body);
+
+  if (!parseResult.success) {
+    return res.status(400).json({
+      error: 'Invalid payload',
+      details: parseResult.error.flatten(),
+    });
+  }
+
+  console.log('/save endpoint received valid payload:', parseResult.data);
+
+  sample = {
+    playlistName: 'Test Playlist',
+    playlistDate: '2023-10-31',
+    numberOfEvents: 12,
+    numberOfPlayers: 8,
+    uploadDate: '2025-02-01',
+    uploadedBy: 'Admin',
+    players: [
+      {
+        name: 'Player1',
+        lastEventPoints: 15,
+        totalPoints: 153,
+      },
+      {
+        name: 'Player2',
+        lastEventPoints: 12,
+        totalPoints: 144,
+      }
+    ]
+  }
+
+  res.status(200).json(sample);
 });
 
 app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
