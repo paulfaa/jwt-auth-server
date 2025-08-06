@@ -9,22 +9,23 @@ const { playlistSchema, parsedImageSchema } = require('./schema');
 const { query } = require('./query');
 const { OpenAI } = require('openai');
 const { zodTextFormat } = require('openai/helpers/zod');
-const { connectToDb, mongoClient } = require('./db');
+const { connectToDb } = require('./db');
 const { loadAllSecrets, getSecret } = require('./secrets');
-
 require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT;
-
 const JWT_EXPIRATION = process.env.JWT_EXPIRATION;
 const upload = multer({ storage: multer.memoryStorage() });
 
 (async () => {
   await loadAllSecrets();
   db = await connectToDb();
+  const collection = db.collection('playlists');
   const openai = new OpenAI({ apiKey: getSecret('openai-api-key') });
-
+  const adminPassword = getSecret('admin-password');
+  const userPassword = getSecret('user-password');
+  const JWT_SECRET = getSecret('jwt-secret');
 
   app.use(cors({
     origin: 'http://localhost:4200',
@@ -38,9 +39,9 @@ const upload = multer({ storage: multer.memoryStorage() });
     const { password } = req.body;
     let role = null;
 
-    if (password === ADMIN_PASSWORD) {
+    if (password === adminPassword) {
       role = 'admin';
-    } else if (password === USER_PASSWORD) {
+    } else if (password === userPassword) {
       role = 'user';
     }
 
@@ -86,6 +87,17 @@ const upload = multer({ storage: multer.memoryStorage() });
       next();
     });
   }
+
+  app.get('/playlists', authenticateToken, async (req, res) => {
+    try {
+      const playlists = await collection.find({}).toArray();
+      console.log(`Fetched ${playlists.length} playlists`);
+      res.status(200).json(playlists);
+    } catch (err) {
+      console.error('Error fetching playlists:', err);
+      res.status(500).json({ error: 'Failed to fetch playlists' });
+    }
+  });
 
   app.post('/upload', authenticateToken, upload.single('image'), async (req, res) => {
     try {
@@ -135,33 +147,12 @@ const upload = multer({ storage: multer.memoryStorage() });
     }
 
     console.log('/save endpoint received valid payload:', parseResult.data);
-
-    sample = {
-      playlistName: 'Test Playlist',
-      playlistDate: '2023-10-31',
-      numberOfEvents: 12,
-      numberOfPlayers: 8,
-      uploadDate: '2025-02-01',
-      uploadedBy: 'Admin',
-      players: [
-        {
-          name: 'Player1',
-          lastEventPoints: 15,
-          totalPoints: 153,
-        },
-        {
-          name: 'Player2',
-          lastEventPoints: 12,
-          totalPoints: 144,
-        }
-      ]
-    }
-
+    
     //need to query DB first to see if playlist already exists for the given date
     try {
-      const existingPlaylist = await collection.findOne({ playlistDate: sample.playlistDate });
+      const existingPlaylist = await collection.findOne({ playlistDate: parseResult.playlistDate });
       if (existingPlaylist) {
-        console.log(`Playlist for date ${sample.playlistDate} already exists. Not inserting.`);
+        console.log(`Playlist for date ${parseResult.playlistDate} already exists. Not inserting.`);
         return res.status(400).json({ error: 'Playlist for this date already exists.' });
       }
     }
@@ -171,13 +162,12 @@ const upload = multer({ storage: multer.memoryStorage() });
     }
 
     try {
-      const insertResult = await collection.insertOne(sample);
+      const insertResult = await collection.insertOne(parseResult.data);
       return res.status(201).json({ message: `Playlist ${insertResult.name} saved successfully` });
     } catch (err) {
       console.error(`Something went wrong trying to insert the new document: ${err}\n`);
+      return res.status(500).json({ error: 'Failed to save playlist' });
     }
-
-    res.status(200).json(sample);
   });
 
   app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
