@@ -1,5 +1,5 @@
-const { MongoClient, ServerApiVersion } = require('mongodb');
-const { getSecret } = require('./secrets');
+import { MongoClient, ServerApiVersion } from 'mongodb';
+import { getSecret } from './secrets.js';
 
 let db;
 let mongoClient;
@@ -29,4 +29,4 @@ function getMongoClient() {
   return mongoClient;
 }
 
-module.exports = { connectToDb, getMongoClient };
+export { connectToDb, getMongoClient };

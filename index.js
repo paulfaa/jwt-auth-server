@@ -1,22 +1,23 @@
-const express = require('express');
-const multer = require('multer');
-const cors = require('cors');
-const bodyParser = require('body-parser');
-const jwt = require('jsonwebtoken');
-const cookieParser = require('cookie-parser');
-const z = require('zod');
-const { playlistSchema, parsedImageSchema } = require('./schema');
-const { query } = require('./query');
-const { OpenAI } = require('openai');
-const { zodTextFormat } = require('openai/helpers/zod');
-const { connectToDb } = require('./db');
-const { loadAllSecrets, getSecret } = require('./secrets');
-require('dotenv').config();
+import express from 'express';
+import multer from 'multer';
+import cors from 'cors';
+import bodyParser from 'body-parser';
+import jwt from 'jsonwebtoken';
+import cookieParser from 'cookie-parser';
+import { playlistSchema, parsedImageSchema } from './schema.js';
+import { query } from './query.js';
+import { OpenAI } from 'openai';
+import { zodTextFormat } from 'openai/helpers/zod';
+import { connectToDb } from './db.js';
+import { loadAllSecrets, getSecret } from './secrets.js';
+import dotenv from 'dotenv';
+dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT;
+const port = process.env.PORT;
 const JWT_EXPIRATION = process.env.JWT_EXPIRATION;
 const upload = multer({ storage: multer.memoryStorage() });
+let db;
 
 (async () => {
   await loadAllSecrets();
@@ -27,10 +28,18 @@ const upload = multer({ storage: multer.memoryStorage() });
   const userPassword = getSecret('user-password');
   const JWT_SECRET = getSecret('jwt-secret');
 
-  app.use(cors({
-    origin: 'http://localhost:4200',
-    credentials: true
-  }));
+  if (process.env.NODE_ENV === 'DEV') {
+    app.use(cors({
+      origin: 'http://localhost:4200',
+      credentials: true
+    }));
+  }
+  if (process.env.NODE_ENV === 'PROD') {
+    app.use(cors({
+      origin: 'http://paulfaa.github.io',
+      credentials: true
+    }));
+  }
   app.use(bodyParser.json());
   app.use(express.json());
   app.use(cookieParser());
@@ -46,10 +55,11 @@ const upload = multer({ storage: multer.memoryStorage() });
     }
 
     if (role) {
+      console.log('expires in:', JWT_EXPIRATION);
       const token = jwt.sign({ role: role }, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
       res.cookie('token', token, {
         httpOnly: true,
-        secure: false, //update later after testing
+        secure: true, //set to false for local dev
         sameSite: 'Lax',
         maxAge: 30 * 60 * 1000
       });
@@ -88,7 +98,8 @@ const upload = multer({ storage: multer.memoryStorage() });
     });
   }
 
-  app.get('/playlists', authenticateToken, async (req, res) => {
+  app.get('/playlists', async (req, res) => {
+    // add caching here
     try {
       const playlists = await collection.find({}).toArray();
       console.log(`Fetched ${playlists.length} playlists`);
@@ -147,7 +158,7 @@ const upload = multer({ storage: multer.memoryStorage() });
     }
 
     console.log('/save endpoint received valid payload:', parseResult.data);
-    
+
     //need to query DB first to see if playlist already exists for the given date
     try {
       const existingPlaylist = await collection.findOne({ playlistDate: parseResult.playlistDate });
@@ -170,7 +181,10 @@ const upload = multer({ storage: multer.memoryStorage() });
     }
   });
 
-  app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`Server listening on port ${port}`);
+  });
+
 
 })();
 

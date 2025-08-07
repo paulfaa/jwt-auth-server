@@ -1,4 +1,4 @@
-const { z } = require('zod');
+import * as z from 'zod';
 
 const playerSchema = z.object({
   name: z.string().min(1),
@@ -23,7 +23,4 @@ const parsedImageSchema = z.object({
   players: z.array(playerSchema),
 });
 
-module.exports = {
-  playlistSchema,
-  parsedImageSchema
-};
+export { playlistSchema, parsedImageSchema };

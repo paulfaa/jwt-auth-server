@@ -1,8 +1,7 @@
-const { SecretManagerServiceClient } = require('@google-cloud/secret-manager');
+import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
+
 const client = new SecretManagerServiceClient();
-
 const PROJECT_ID = 'seasonstats';
-
 const secrets = {};
 
 async function loadSecret(secretName) {
@@ -35,7 +34,4 @@ function getSecret(name) {
   return secrets[name];
 }
 
-module.exports = {
-  loadAllSecrets,
-  getSecret,
-};
+export { loadAllSecrets, getSecret };
