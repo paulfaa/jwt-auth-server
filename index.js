@@ -31,13 +31,12 @@ let db;
   if (process.env.NODE_ENV === 'DEV') {
     app.use(cors({
       origin: 'http://localhost:4200',
-      credentials: true
     }));
   }
   if (process.env.NODE_ENV === 'PROD') {
     app.use(cors({
-      origin: 'http://paulfaa.github.io',
-      credentials: true
+      origin: 'https://paulfaa.github.io',
+      methods: ['GET', 'POST'],
     }));
   }
   app.use(bodyParser.json());
@@ -56,20 +55,22 @@ let db;
 
     if (role) {
       console.log('expires in:', JWT_EXPIRATION);
-      const token = jwt.sign({ role: role }, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
-      res.cookie('token', token, {
-        httpOnly: true,
-        secure: true, //set to false for local dev
-        sameSite: 'Lax',
-        maxAge: 30 * 60 * 1000
+
+      const token = jwt.sign({ role }, JWT_SECRET, { expiresIn: JWT_EXPIRATION });
+
+      res.status(200).json({
+        success: true,
+        role,
+        token
       });
-      res.status(200).json({ success: true, role: role });
+
       console.log(`User logged in successfully as ${role}`);
     } else {
       res.status(401).json({ message: 'Unauthorized' });
       console.log('Login failed - invalid password');
     }
   });
+
 
   app.get('/check', authenticateToken, (req, res) => {
     console.log('/check - user is authenticated');
@@ -81,7 +82,9 @@ let db;
   });
 
   function authenticateToken(req, res, next) {
-    const token = req.cookies.token;
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1];
+
     if (!token) {
       console.log('Authentication failed: No token provided');
       return res.sendStatus(401);
@@ -92,11 +95,13 @@ let db;
         console.log('Authentication failed: Invalid or expired token');
         return res.sendStatus(403);
       }
+
       req.user = user;
-      console.log('Authentication successful');
+      console.log(`Authentication successful for role: ${user.role}`);
       next();
     });
   }
+
 
   app.get('/playlists', async (req, res) => {
     // add caching here
@@ -137,7 +142,6 @@ let db;
         text: { format: zodTextFormat(parsedImageSchema, "result") },
       });
       const result = response.output_parsed;
-      console.log('Parsed result:', result);
       res.status(200).json(result);
     }
     catch (error) {
